@@ -14,6 +14,13 @@ test-set frame the engine restores the random-number state its batch had in the 
 Fusion layers get the same weights the evaluation used. New uploads use the state of the first evaluation batch.
 check_replay() proves on the real model that one forward pass draws exactly what replay() assumes.
 
+Why whole batches: Liao et al.'s Interactive Fusion Classifier uses nn.TransformerEncoderLayer(d_model=1024, nhead=8),
+which expects [sequence, batch, features], but receives [batch, tokens, features]. Its self-attention therefore runs
+across the samples of a mini-batch: a frame's score depends on the other frames scored with it. The evaluation scored
+the test CSVs 32 rows at a time, so for a test frame the engine re-runs its exact evaluation batch (all 32 rows, from
+bundle/batches) with that batch's random-number state, and reads off the frame's score. New uploads are scored on
+their own (DEMO_UPLOAD_BATCH=alone) or with a fixed set of reference test frames filling the batch to 32 (=reference).
+
 Modes (DEMO_MODE):
   live     every click runs the models on the GPU; all four are loaded at start-up (warm()). If a live run fails, the
            run saved for that input by tools/prerun.py is shown instead, so the screen never goes blank.
@@ -28,6 +35,9 @@ import tempfile
 import threading
 import time
 
+DEVICE_PREF = os.environ.get("DEMO_DEVICE", "auto")      # auto | cpu
+if DEVICE_PREF == "cpu":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import numpy as np
 import torch
 from PIL import Image, ImageDraw
@@ -37,17 +47,43 @@ BUNDLE = os.environ.get("DEMO_BUNDLE", os.path.join(ROOT, "bundle"))
 THESIS = os.environ.get("DEMO_THESIS", os.path.join(ROOT, "thesis"))
 CACHE = os.environ.get("DEMO_CACHE", os.path.join(ROOT, "cache"))
 MODE = os.environ.get("DEMO_MODE", "live")
-GPU_SLOTS = int(os.environ.get("DEMO_GPU_MODELS", "2"))   # models kept on the GPU at once; the rest wait in RAM
+GPU_SLOTS = int(os.environ.get("DEMO_GPU_MODELS", "1"))   # models kept on the GPU at once; the rest wait in RAM
+UPLOAD_BATCH = os.environ.get("DEMO_UPLOAD_BATCH", "alone")   # alone | reference
+BATCHES = os.path.join(BUNDLE, "batches")
 sys.path.insert(0, THESIS)
 os.environ.setdefault("MODEL_DOWNLOAD_ROOT", os.path.join(BUNDLE, "clip_weights"))      # read by thesis src/config.py
 os.environ.setdefault("LANDMARK_PREDICTOR", os.path.join(BUNDLE, "shape_predictor_81_face_landmarks.dat"))
-ENGINE_VERSION = 2
+ENGINE_VERSION = 3
 
 SEED = 42
 MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 CKPT = {1: "model1_baseline.pth", 2: "model2_daid_only.pth", 3: "model3_fixed_srm.pth", 4: "model4_full_learnable.pth"}
 MODELS = {1: "Model 1", 2: "Model 2", 3: "Model 3", 4: "Model 4"}
+
+
+def use_cpu_for_liao_code():
+    """Liao's code hard-codes 'cuda' (DFACLIP device, .cuda() calls). With DEMO_DEVICE=cpu those go to the CPU, and
+    CLIP is loaded the way clip.load does for the CPU (full precision). The thesis files are not changed."""
+    import torch.nn as nn
+
+    def cpu(a):
+        return "cpu" if (isinstance(a, str) and a.startswith("cuda")) or (isinstance(a, torch.device) and a.type == "cuda") else a
+
+    def wrap(orig):
+        def to(self, *args, **kw):
+            args = tuple(cpu(a) for a in args)
+            if "device" in kw:
+                kw["device"] = cpu(kw["device"])
+            return orig(self, *args, **kw)
+        return to
+    nn.Module.to = wrap(nn.Module.to)
+    nn.Module.cuda = lambda self, *a, **k: self
+    torch.Tensor.to = wrap(torch.Tensor.to)
+    torch.Tensor.cuda = lambda self, *a, **k: self
+    import src.models.DFACLIP.DFACLIP as D
+    load = D.load
+    D.load = lambda name, device=None, download_root=None, **k: load(name, device="cpu", download_root=download_root)
 
 
 def samples_meta():
@@ -198,6 +234,8 @@ class Engine:
         self.device = "cuda" if (MODE == "live" and torch.cuda.is_available()) else "cpu"
         self.gpu_name = torch.cuda.get_device_name(0) if self.device == "cuda" else "CPU"
         self.warm_state = {"done": 0, "error": None, "running": False}
+        if MODE == "live" and self.device == "cpu":
+            use_cpu_for_liao_code()
         meta = samples_meta()
         self.order = meta["order"]
         self.needed = {("A", 0)}   # uploads use the first evaluation batch
@@ -209,7 +247,31 @@ class Engine:
     def status(self):
         weights = {k: os.path.exists(os.path.join(BUNDLE, "weights", CKPT[k])) for k in MODELS}
         return {"mode": MODE, "device": self.gpu_name, "weights": weights, "loaded": sorted(self.models),
-                "warm": self.warm_state}
+                "warm": self.warm_state, "upload_batch": UPLOAD_BATCH}
+
+    @staticmethod
+    def batch_rows(key):
+        """All rows of one evaluation batch, in evaluation order, as frames with absolute file paths."""
+        d = os.path.join(BATCHES, f"{key[0]}{key[1]:05d}")
+        with open(os.path.join(d, "rows.json")) as f:
+            rows = json.load(f)
+        for r in rows:
+            r["file"], r["lm_file"], r["index"] = os.path.join(d, r["file"]), os.path.join(d, r["lm_file"]), r["row"]
+        return rows
+
+    def reference_frames(self, n):
+        """A fixed, balanced set of n Test Set A frames (real and fake alternating) to fill an upload's batch to 32."""
+        real, fake = [], []
+        for name in sorted(os.listdir(BATCHES)) if os.path.isdir(BATCHES) else []:
+            if name.startswith("A"):
+                for r in self.batch_rows((name[0], int(name[1:]))):
+                    (real if r["label"] == "REAL" else fake).append(r)
+        out = []
+        while len(out) < n and (real or fake):
+            for pool in (real, fake):
+                if pool and len(out) < n:
+                    out.append(pool.pop(0))
+        return out
 
     def warm(self):
         """Loads the four models in the background at start-up, so the first click is as fast as the rest."""
@@ -324,23 +386,41 @@ class Engine:
             frames = load_sample(sample_dir)
             m, agg, states = self.model(k)
             srm = k >= 3
-            ds = thesis_dataset(sample_dir, frames, srm)
             bs = self.order["batch_size"]
-            groups = {}
-            for i, f in enumerate(frames):    # frames that shared an evaluation batch share its random numbers
-                key = (f["set"], f["row"] // bs) if f.get("set") is not None else ("A", 0)
-                groups.setdefault(key, []).append(i)
+            for f in frames:
+                f["file"], f["lm_file"] = os.path.join(sample_dir, f["file"]), os.path.join(sample_dir, f["lm_file"])
+            # which frames run together: a test frame with its whole evaluation batch; an upload alone or with references
+            runs = []        # (rng key, batch frames, {sample frame i: position in batch})
+            if frames[0].get("set") is not None:
+                keys = []
+                for f in frames:
+                    key = (f["set"], f["row"] // bs)
+                    if key not in keys:
+                        keys.append(key)
+                for key in keys:
+                    rows = self.batch_rows(key)
+                    pos = {r["row"]: j for j, r in enumerate(rows)}
+                    runs.append((key, rows, {i: pos[f["row"]] for i, f in enumerate(frames) if (f["set"], f["row"] // bs) == key}))
+            else:
+                extra_rows = self.reference_frames(bs - len(frames)) if UPLOAD_BATCH == "reference" else []
+                runs.append((("A", 0), frames + extra_rows, {i: i for i in range(len(frames))}))
             p = np.zeros(len(frames))
-            first = None
+            first, batch_diff = None, 0.0
             with torch.no_grad():
-                for key, idx in groups.items():
-                    d = {n: v.to(self.device) for n, v in ds.collate_fn([ds[i] for i in idx]).items()}
+                for key, batch, where in runs:
+                    ds = thesis_dataset("", batch, srm)
+                    d = {n: v.to(self.device) for n, v in ds.collate_fn([ds[j] for j in range(len(batch))]).items()}
                     if states is not None:
                         torch.set_rng_state(states[key])
                     pred = m(d)
-                    p[idx] = torch.softmax(pred["cls"].float(), dim=1)[:, 1].cpu().numpy().astype(float)
-                    if 0 in idx:
-                        first = (pred, d, idx.index(0))
+                    pb = torch.softmax(pred["cls"].float(), dim=1)[:, 1].cpu().numpy().astype(float)
+                    for i, j in where.items():
+                        p[i] = pb[j]
+                    for j, r in enumerate(batch):   # every row of a test batch has a recorded score: check them all
+                        if r.get("eval_p") and "row" in r:
+                            batch_diff = max(batch_diff, abs(pb[j] - r["eval_p"][str(k)]))
+                    if 0 in where:
+                        first = (pred, d, where[0])
                 extra = self._extras(m, agg, first[0], first[1], first[2], srm, out_dir, k)
             secs = time.time() - t0
         os.makedirs(out_dir, exist_ok=True)
@@ -350,6 +430,7 @@ class Engine:
                "frame_p": [float(x) for x in p], "p": mean, "verdict": "Fake" if mean >= 0.5 else "Real",
                "label": label, "correct": None if label is None else ((mean >= 0.5) == (label == "Fake")),
                "eval_p": eval_p, "frame_eval_p": [None if not f.get("eval_p") else f["eval_p"][str(k)] for f in frames],
+               "batch_rows": sum(len(b) for _, b, _ in runs), "batch_max_diff": batch_diff,
                "seconds": round(secs, 2), "mode": MODE, "replayed": False, **extra}
         with open(cached, "w") as f:
             json.dump(res, f)

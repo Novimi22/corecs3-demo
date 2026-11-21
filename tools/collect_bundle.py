@@ -8,6 +8,9 @@ Copies what the demo needs into C:\\corecs3-demo\\bundle (nothing in the thesis 
   samples/      the curated test inputs: the SAME 224 x 224 crops and 81-point landmark files the evaluation read
                 (from DATA_ROOT), one folder per input, plus samples.json with, for every frame, its row in the test
                 CSV (= its position in the evaluation) and the score each model gave it in the evaluation
+  batches/      every evaluation batch (32 rows) a curated frame sat in: Liao's Interactive Fusion transformer
+                attends across the samples of a batch (nn.TransformerEncoderLayer with batch_first=False on [B, L, C]),
+                so a frame's score depends on the other 31 frames of its batch. The demo re-runs the exact batch.
   clip_weights/ CLIP ViT-L/14, so the laptop needs no download
   shape_predictor_81_face_landmarks.dat   for new uploads
 Then zip the bundle folder and put it on the team Drive.
@@ -134,6 +137,29 @@ def main():
                       "video_id": vid, "eval_p": ev})
         print(f"[+] {tag:4s} {m}/{folder}: {len(entries)} frame(s), evaluation scores "
               f"{[round(ev[str(k)], 4) for k in CKPT]}")
+    # every evaluation batch a curated frame sat in, with all 32 rows (crops, landmarks, recorded scores)
+    needed = sorted({(e["set"], e["row"] // BATCH_SIZE) for it in items
+                     for e in json.load(open(os.path.join(OUT, "samples", it["id"], "manifest.json")))})
+    for t, b in needed:
+        d = os.path.join(OUT, "batches", f"{t}{b:05d}")
+        os.makedirs(d, exist_ok=True)
+        rows = []
+        for _, r in sets[t].iloc[b * BATCH_SIZE:(b + 1) * BATCH_SIZE].iterrows():
+            row = int(r["row"])
+            shutil.copy(local(r["img"]), os.path.join(d, f"r{row:06d}.png"))
+            shutil.copy(local(r["landmark"]), os.path.join(d, f"r{row:06d}_lm81.npy"))
+            rows.append({"row": row, "file": f"r{row:06d}.png", "lm_file": f"r{row:06d}_lm81.npy", "label": r["label"],
+                         "method": r["method"], "eval_p": {str(k): float(frame_p[(k, t)][row]) for k in CKPT}})
+        with open(os.path.join(d, "rows.json"), "w") as f:
+            json.dump(rows, f)
+    print(f"[+] {len(needed)} evaluation batches copied (all 32 rows each)")
+    for t, df in sets.items():   # how the evaluation batches were composed (CSV order, 32 rows per batch)
+        g = df.groupby(df["row"] // BATCH_SIZE)
+        lab = g["label"].agg(lambda x: "REAL" if (x == "REAL").all() else "FAKE" if (x == "FAKE").all() else "MIXED")
+        one = int((g["method"].nunique() == 1).sum())
+        print(f"[i] Test Set {t}: {len(lab)} batches -> {int((lab == 'REAL').sum())} all real, "
+              f"{int((lab == 'FAKE').sum())} all fake, {int((lab == 'MIXED').sum())} mixed; "
+              f"{one} hold a single method only")
     order = {"batch_size": BATCH_SIZE, "rows": {t: len(df) for t, df in sets.items()},
              "batches": {t: math.ceil(len(df) / BATCH_SIZE) for t, df in sets.items()}}
     with open(os.path.join(OUT, "samples", "samples.json"), "w") as f:

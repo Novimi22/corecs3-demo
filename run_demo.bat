@@ -9,9 +9,7 @@ if not exist .venv\Scripts\python.exe (
 set DEMO_MODE=live
 if /I "%1"=="saved" set DEMO_MODE=replay
 set DEMO_THESIS=%~dp0thesis
-set MODEL_DOWNLOAD_ROOT=%~dp0bundle\clip_weights
-set LANDMARK_PREDICTOR=%~dp0bundle\shape_predictor_81_face_landmarks.dat
-set DEMO_GPU_MODELS=2
+set DEMO_GPU_MODELS=1
 start "" /b cmd /c "timeout /t 8 >nul & start http://localhost:7860"
 .venv\Scripts\python.exe app\server.py
 pause
