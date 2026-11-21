@@ -1,0 +1,15 @@
+# Install CUDA PyTorch FIRST (README step 4), then:  pip install -r requirements.txt
+flask
+numpy
+pandas
+Pillow
+opencv-python
+scipy
+scikit-learn
+timm==1.0.15
+ftfy==6.3.1
+regex
+setuptools==75.8.2
+tqdm
+python-dotenv
+dlib-bin
