@@ -134,3 +134,4 @@ td.n,th.n{text-align:right;font-family:var(--mono);white-space:nowrap}
 .empty{padding:40px;text-align:center;color:var(--mut);border:1px dashed var(--rule);border-radius:10px}
 
 .case h2 .tag{font:600 14px/1 var(--mono);background:var(--blue2);color:var(--blue);padding:5px 8px;border-radius:5px;vertical-align:4px}
+.drop .formats{display:block;margin-top:8px;font-size:12.5px;line-height:1.45;color:var(--mut)}
