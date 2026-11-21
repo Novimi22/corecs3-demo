@@ -13,3 +13,4 @@ setuptools==75.8.2
 tqdm
 python-dotenv
 dlib-bin
+requests
