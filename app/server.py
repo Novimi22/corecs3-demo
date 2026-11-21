@@ -17,6 +17,11 @@ SAMPLES = os.path.join(E.BUNDLE, "samples")
 UPLOADS = os.path.join(E.ROOT, "uploads")
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+
+
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"error": "This file is larger than 200 MB. Use a shorter video."}), 413
 engine = E.Engine()
 
 
@@ -103,7 +108,8 @@ def upload():
         return jsonify({"error": "No file received."}), 400
     ext = os.path.splitext(f.filename)[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".mp4", ".mov", ".avi", ".mkv"):
-        return jsonify({"error": "Use a photo (JPG, PNG) or a short video (MP4, MOV)."}), 400
+        return jsonify({"error": "This file type is not supported. Use a photo (JPG, JPEG, PNG, WEBP, BMP) "
+                                 "or a video (MP4, MOV, AVI, MKV), up to 200 MB."}), 400
     sid = "upload-" + uuid.uuid4().hex[:8]
     d = os.path.join(UPLOADS, sid)
     os.makedirs(d, exist_ok=True)
