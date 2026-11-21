@@ -259,13 +259,14 @@ class Engine:
             r["file"], r["lm_file"], r["index"] = os.path.join(d, r["file"]), os.path.join(d, r["lm_file"]), r["row"]
         return rows
 
-    def reference_frames(self, n):
+    def reference_frames(self, n, exclude=()):
         """A fixed, balanced set of n Test Set A frames (real and fake alternating) to fill an upload's batch to 32."""
         real, fake = [], []
         for name in sorted(os.listdir(BATCHES)) if os.path.isdir(BATCHES) else []:
             if name.startswith("A"):
                 for r in self.batch_rows((name[0], int(name[1:]))):
-                    (real if r["label"] == "REAL" else fake).append(r)
+                    if (name[0], r["row"]) not in exclude:
+                        (real if r["label"] == "REAL" else fake).append(r)
         out = []
         while len(out) < n and (real or fake):
             for pool in (real, fake):
