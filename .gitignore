@@ -1,0 +1,10 @@
+# never committed: FF++ terms forbid redistribution; weights and samples stay on the team Drive
+bundle/
+cache/
+uploads/
+thesis/
+clip_weights/
+.venv/
+__pycache__/
+*.pyc
+.env
