@@ -1,99 +1,131 @@
-# CORECS3 system demo
+# CORECS3 system demo: how to run it on the HPC
 
-A live demonstration of the four trained models from *Cross-Domain Deepfake Detection on Human Portraits*. It takes an input (a test video, a test photo, or a new upload), runs it through every module, and shows each model's output. It runs on a Windows laptop with an NVIDIA GPU and needs no internet once it is set up.
+The demo runs our four trained models live on the HPC's GPU. You can pick a test input or upload a new photo or video, then watch it go through the whole system: frames, face crop, landmarks, both streams, DAID, and the final REAL or FAKE decision.
 
-The thesis code does all the work. The demo uses the `thesis` folder (branch `hpc-model4`) for:
+Everything below happens **on the HPC**. Connect to it with **Chrome Remote Desktop**.
 
-- preprocessing new uploads, with `data_loader.py`
-- loading inputs, with `TestDataset`
-- building the models, with `eval_model.load_model_k`
-- scoring, as `eval_model.py` does
+---
 
-This repository adds only the screens.
+## Where everything is (on the HPC)
 
-**This repository holds no videos, images or weights.** The FaceForensics++ terms do not allow redistribution, so the samples and checkpoints stay on the team Drive, in `corecs3-demo-bundle.zip`.
-
-## Screens
-
-| Screen | What it shows |
+| What | Where |
 |---|---|
-| Detect | Choose an input or upload a new photo or video. All four models run on it, one after another. |
-| Inside the system | The same input followed through every step: frames, face crop, landmarks, normalization, the two streams, fusion, DAID, the classifier, and the decision. |
-| Batch test | Every input in the list through all four models, with a confusion matrix for each model. |
+| The demo | `C:\corecs3-demo` |
+| Start button | `C:\corecs3-demo\run_demo_hpc.bat` |
+| Models, test inputs and recorded scores | `C:\corecs3-demo\bundle` (don't edit) |
+| Our thesis code and Python environment | `C:\corecs3-dual-stream` (the demo only reads from it) |
+| Uploaded files | `C:\corecs3-demo\uploads` |
 
-## How the outputs stay identical to the evaluation
+---
 
-Liao et al.'s Global Feature Adapter builds a new layer with random weights on every forward pass. A frame's score therefore depends on the random numbers drawn before its batch during the evaluation.
+## 1. Before you start: restart the HPC if needed
 
-The demo rebuilds each model exactly as `eval_model.py` did: seed 42, then `load_model_k`. For a test-set frame, it restores the random-number state that frame's batch had in the evaluation. The batch is the frame's row in the test CSV divided by 32. The adapter then draws the same weights, and the frame gets the same score.
+The HPC's GPU uses a free licence that stops working about 24 hours after a restart. If nobody has restarted it today:
 
-For every test input, the Detect screen shows ✓ **Matches the recorded test result** when the live score is within 0.01 of the score in that model's predictions file and gives the same verdict.
+1. Click **Start**, then the power button, then **Restart**.
+2. Wait 2–3 minutes, then reconnect with Chrome Remote Desktop.
 
-`tools/prerun.py` checks this for every input before the defense.
+**On defense day, always restart it in the morning.**
 
-## Setup (once)
+---
 
-**1. HPC: collect the bundle.** Open PowerShell. Go to `C:\corecs3-dual-stream`, activate the venv, and check that you are on branch `hpc-model4`. Then run:
+## 2. Start the demo
 
+1. Open **File Explorer** and go to `C:\corecs3-demo`.
+2. Double-click **`run_demo_hpc.bat`**.
+3. A **black window** opens. **Minimize it. Don't close it.** That window *is* the demo; closing it stops everything.
+4. Chrome opens the demo at **http://localhost:7860** after about 8 seconds.
+5. Wait until the chip at the top right says **"Live · NVIDIA L4-24Q"**. It shows "Loading models 1/4…" for about a minute first.
+
+---
+
+## 3. Use the demo
+
+| Screen | What to do |
+|---|---|
+| **Detect** | Pick an input on the left, or upload one, then click **Run the four models**. Each card shows that model's fake probability (0 = real, 1 = fake; 0.50 or higher = FAKE). |
+| **Inside the system** | After running an input, pick a model (1–4) to see every step for that input. |
+| **Batch test** | Click **Run all inputs**. Each model's card should say **"27 of 27 match the recorded test results"**. |
+| **Results (Chapter IV)** | The Chapter IV results as reported in the manuscript: performance table, AUC-ROC bars, confusion matrices, threshold tests, model comparison and error analysis. |
+
+**"✓ Matches the recorded test result"** means the live score is the same as the score that model gave that input in our Chapter IV evaluation. Uploads have no recorded result, so they say "New input: no recorded test result".
+
+### Uploading a photo or video
+- **Photos:** JPG, JPEG, PNG, WEBP or BMP. **Videos:** MP4, MOV, AVI or MKV. Up to **200 MB**.
+- Any video length works. The system always analyses 10 evenly spaced frames. Keep demo clips under about 30 seconds so results come back quickly.
+- Only the **largest face** in each frame is analysed.
+- iPhone HEIC photos are rejected. iPhone videos may need *Settings → Camera → Formats → Most Compatible*.
+- Our tested upload files and their true answers are in the **Demo uploads** Drive folder and the **Demo Upload References** sheet (team Drive). Download the ones you need to the HPC's Desktop before presenting.
+- Use photos of teammates, with their permission, or generated faces. Don't use strangers or public figures.
+
+---
+
+## 4. Stop the demo
+
+Close the **black window** with its **X**. If Windows asks "Terminate batch job?", type `Y` and press Enter.
+
+### Clear old uploads (before presenting)
+With the demo **stopped**, delete the folder `C:\corecs3-demo\uploads`. The "Your uploads" list then starts empty next time.
+
+---
+
+## 5. If something goes wrong
+
+| What you see | What to do |
+|---|---|
+| **"Failed to fetch"** everywhere | The black window was closed. Double-click `run_demo_hpc.bat` again. |
+| Chip stays on **"Loading models…"**, or says **"models did not load"** | The GPU licence has probably expired. Restart the HPC (step 1), then start the demo again. |
+| The page looks old after an update | Click the page and press **Ctrl + F5**. |
+| A red message under the upload box | Read it. Usually the format is wrong, the file is too big, or no face was found. |
+| A card says **"Saved run shown: the live run failed"** | The GPU had a problem, so the demo showed the checked saved result instead. Restart the demo; if it keeps happening, restart the HPC. |
+
+**Check the GPU** in PowerShell:
 ```
-git clone https://github.com/<your-account>/corecs3-demo C:\corecs3-demo
-python C:\corecs3-demo\tools\collect_bundle.py
+cd C:\corecs3-dual-stream
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+python -c "import torch; x = torch.ones(3).cuda(); print('GPU works:', x * 2)"
 ```
+It should print `GPU works: tensor([2., 2., 2.], device='cuda:0')`. If it says "operation not supported", restart the HPC.
 
-The script copies the following into `C:\corecs3-demo\bundle`:
+---
 
-- the four checkpoints
-- the curated inputs (S1–S8, ten difficult inputs and nine more), with the exact crops and landmark files the evaluation read
-- every model's recorded score for every one of their frames
-- the CLIP weights
-- the landmark predictor
+## 6. Optional: re-check accuracy
 
-It changes nothing in the thesis folders. Every line should start with `[+]`. Zip the `bundle` folder and upload it to the team Drive as `corecs3-demo-bundle.zip`.
-
-**2. Laptop: get the code.** In PowerShell:
-
+This runs every test input through all four models and compares every score with our recorded results. It takes about 5–10 minutes. Close the demo's black window first, then run in PowerShell:
 ```
-cd $HOME\Documents
-git clone https://github.com/<your-account>/corecs3-demo
-cd corecs3-demo
-git clone -b hpc-model4 https://github.com/mejhee/corecs3-dual-stream thesis
+cd C:\corecs3-dual-stream
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+$env:DEMO_THESIS="C:\corecs3-dual-stream"
+$env:DEMO_GPU_MODELS="4"
+cd C:\corecs3-demo
+python -u tools\prerun.py
 ```
+The last line should read **ALL RESULTS MATCH THE RECORDED TEST RESULTS.**
 
-**3. Laptop: add the bundle.** Download `corecs3-demo-bundle.zip` from the Drive and unzip it inside `corecs3-demo`. Check that `corecs3-demo\bundle\weights\model1_baseline.pth` exists.
+---
 
-**4. Laptop: install.** Use Python 3.12 from python.org and tick "Add to PATH". The versions must match the HPC:
+## 7. Updating the demo code
 
+The code lives in this GitHub repo. To update one file on the HPC, run this in PowerShell (example for `app/engine.py`):
 ```
-py -3.12 -m venv .venv
-.venv\Scripts\activate
-pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu126
-pip install -r requirements.txt
-pip install facenet-pytorch --no-deps
-python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+Invoke-WebRequest "https://raw.githubusercontent.com/Novimi22/corecs3-demo/main/app/engine.py?v=1" -OutFile C:\corecs3-demo\app\engine.py
 ```
+Change the `?v=` number each time, so GitHub sends a fresh copy. Restart the demo afterwards.
 
-The last line must print `2.6.0+cu126 True` and the name of your RTX card.
+---
 
-**5. Laptop: run every input once and check it.**
+## Rules
+- **Never upload the `bundle` folder, videos, images or model weights to GitHub.** The FaceForensics++ terms don't allow sharing them. They stay on the team Drive (`corecs3-demo-bundle.zip`).
+- Don't change anything in `C:\corecs3-dual-stream`. The demo only reads from it.
 
-```
-python tools\prerun.py --fresh
-```
+---
 
-This runs every input through the four models, saves each run, and compares every frame's score with its recorded score. The last line must read **ALL RESULTS MATCH THE RECORDED TEST RESULTS.**
-
-## Starting the demo
-
-Double-click `run_demo.bat`. The browser opens at http://localhost:7860; press F11 for full screen. The status chip shows *Loading models 1/4…* for about a minute, then *Live · <your GPU>*. Wait for that before you start.
-
-If a live run ever fails, the screen shows the saved run from step 5 for that input and says so.
-
-**Backup:** if the GPU misbehaves on the day, double-click `run_saved_only.bat`. It shows the runs saved in step 5 and needs no GPU. Uploads don't work in this mode.
-
-## Settings (environment variables)
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `DEMO_MODE` | `live` | `live` runs on the GPU. `replay` only shows saved runs. `standin` uses random-weight test models (for code checks only). |
-| `DEMO_GPU_MODELS` | `2` | How many models stay on the GPU at once. The others wait in RAM. |
-| `DEMO_PORT` | `7860` | Web port |
+## Defense-day checklist
+- [ ] Restart the HPC in the morning.
+- [ ] Delete `C:\corecs3-demo\uploads`.
+- [ ] Start `run_demo_hpc.bat` and wait for **"Live · NVIDIA L4-24Q"**.
+- [ ] Run S4 once: the four scores should be 0.6192 · 0.5632 · 0.4861 · 0.3925, each with ✓.
+- [ ] Have the upload files ready on the HPC's Desktop.
+- [ ] Keep the black window minimized, not closed.
