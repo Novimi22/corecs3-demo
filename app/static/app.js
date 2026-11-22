@@ -67,6 +67,93 @@ async function loadSamples(selectId) {
   if (selectId) select(selectId); else if (!S.sel && S.samples.length) select((S.samples.find(s => s.tag === 'S4') || S.samples[0]).id);
 }
 
+/* ---------------------------------------------------------------- why these results */
+// Pre-written notes, chosen by rules from the four scores, the input type and the true answer (when known).
+// Every figure comes from Chapter IV at the 0.5 cut-off; nothing here analyses the image itself.
+const FACTS = {A: {tpr: [.9888, .9700, .9613, .9700], fpr: [.4050, .1250, .1350, .2400]},
+               B: {tpr: [.9382, .7884, .8012, .8277], fpr: [.5135, .2704, .2221, .4631]}};
+// Error remarks for the ten inputs that all four models got wrong (Chapter IV error analysis)
+const REMARKS = {
+  '543_bf35b651': 'a blurry, heavily compressed broadcast frame with the skin texture smoothed out',
+  '080_d3b22235': 'a low-resolution news frame with soft focus and a downward gaze',
+  '256_c5f08095': 'bright, even lighting and smooth, made-up skin, with the mouth open mid-speech',
+  '419_824_83f6d9f9': 'a low-quality webcam frame with the eyes nearly closed and the mouth moving',
+  '522_337_43e97647': 'a blurry broadcast frame with the mouth open mid-speech, where the manipulation lies',
+  '18310_91fbb426': 'a stylized, retouched portrait with high contrast, heavy makeup and hair over the face',
+  '22314_f67c92ad': 'a severely blurred, upscaled close-up with part of the face outside the crop',
+  '21633_acb7292f': 'a studio portrait with soft lighting and very smooth, retouched skin',
+  '2755_052cab31': 'a sharp image with natural lighting and realistic skin texture and stubble',
+  '8822_0abdd520': 'a sharp image with natural wrinkles and realistic skin detail'};
+const pct = v => (v * 100).toFixed(1) + '%';
+const andList = a => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+const names = ks => (ks.length === 1 ? 'Model ' : 'Models ') + andList(ks.map(String));
+const one = (ks, a, b) => ks.length === 1 ? a : b;
+// "the false-positive rate was 40.5% for Model 1 and 24.0% for Model 4" / "the false-positive rate of Model 1 was 40.5%"
+const rateOf = (label, ks, rates) => ks.length === 1 ? `the ${label} of Model ${ks[0]} was ${pct(rates[ks[0] - 1])}`
+  : `the ${label} was ${andList(ks.map(k => `${pct(rates[k - 1])} for Model ${k}`))}`;
+function explain(s, R) {
+  const ks = [1, 2, 3, 4], fake = ks.filter(k => R[k].p >= .5), real = ks.filter(k => R[k].p < .5);
+  const dom = s.set || (s.kind === 'video' ? 'A' : 'B'), F = FACTS[dom];
+  const realWhere = dom === 'A' ? 'the real FaceForensics++ videos of Test Set A' : 'real photos from outside the training data';
+  const fakeWhere = dom === 'A' ? 'the fake videos of Test Set A' : 'the diffusion-generated faces of Test Set B';
+  const noun = s.kind === 'video' ? 'video' : 'image';
+  const remark = REMARKS[s.folder];
+  const MECH = 'The error analysis suggests that the models relied partly on skin smoothness and image quality as indicators of manipulation.';
+  const out = [];
+  out.push(!real.length ? 'All four models classified this face as fake.' : !fake.length ? 'All four models classified this face as real.'
+    : `${names(fake)} classified this face as fake, whereas ${names(real)} classified it as real.`);
+
+  if (s.label) {                                   // a test input: the ground truth is known
+    const truthFake = s.label === 'Fake';
+    const wrong = ks.filter(k => (R[k].p >= .5) !== truthFake), right = ks.filter(k => !wrong.includes(k));
+    if (!wrong.length) {
+      out.push(dom === 'A'
+        ? 'All four models classified this input correctly. This outcome is consistent with the in-domain results in Chapter IV, where every model achieved an AUC-ROC above 0.96 on the FaceForensics++ videos of Test Set A.'
+        : 'All four models classified this input correctly. Although the models were less reliable on DiffusionFace than on FaceForensics++, with AUC-ROC values of 0.77 to 0.89 compared with 0.97 to 0.99, they still classified the majority of Test Set B images correctly.');
+    } else if (!truthFake) {
+      out.push(`Because this face is real, ${wrong.length === 4 ? 'all four fake classifications are false positives'
+        : `the fake ${one(wrong, 'classification', 'classifications')} by ${names(wrong)} ${one(wrong, 'is a false positive', 'are false positives')}`}. False positives on real faces were the most consistent failure in this study: on ${realWhere}, ${rateOf('false-positive rate', wrong, F.fpr)}.`);
+      if (right.length) out.push(`${names(right)}, which had lower false-positive ${one(right, 'rate', 'rates')} (${andList(right.map(k => pct(F.fpr[k - 1])))}), classified it correctly.`);
+      if (remark) out.push(`Chapter IV identifies this ${noun} as one of the ten inputs misclassified by all four models and describes it as ${remark}. ${MECH}`);
+      else if (wrong.length === 4) out.push('No model met the false-positive threshold on either test set.');
+    } else {
+      out.push(`Because this face is fake, ${wrong.length === 4 ? 'all four real classifications are missed detections'
+        : `the real ${one(wrong, 'classification', 'classifications')} by ${names(wrong)} ${one(wrong, 'is a missed detection', 'are missed detections')}`}.`);
+      if (s.method === 'NeuralTextures') out.push('NeuralTextures modifies only the texture of the mouth region, which made it the most difficult manipulation for the models: it accounted for approximately half of each model\'s missed fake videos.');
+      else if (s.method === 'ADM') out.push(`This image was produced by a diffusion model, a type of forgery that none of the models encountered during training. On ${fakeWhere}, ${rateOf('detection rate', wrong, F.tpr)}.`);
+      else out.push(`Such misses were uncommon on FaceForensics++: on ${fakeWhere}, ${rateOf('detection rate', wrong, F.tpr)}.`);
+      if (remark) out.push(`Chapter IV identifies this ${noun} as one of the ten inputs misclassified by all four models and describes it as ${remark}.` +
+        (s.method === 'ADM' ? ' The generated faces that the models missed were generally sharp and natural in appearance, which suggests that the models relied partly on skin smoothness and image quality as indicators of manipulation.' : ''));
+    }
+  } else {                                         // an upload: the ground truth is unknown
+    out.push('Because the ground truth of this upload is unknown, it cannot be determined which classifications are correct; however, the Chapter IV results indicate how often each type of error occurred.');
+    if (!fake.length) {
+      out.push(`If the face is genuine, this outcome is expected. If it is fake, all four models missed it, which the results suggest is uncommon, since Model 1 alone detected ${pct(F.tpr[0])} of ${fakeWhere}.`);
+    } else if (!real.length) {
+      out.push(`If the face is genuine, this outcome reflects the most consistent failure in the study: on ${realWhere}, Model 1 classified ${pct(F.fpr[0])} as fake, and no model met the false-positive threshold on either test set. The real faces misclassified as fake in the error analysis were mostly blurry, compressed or retouched. If the face is fake, all four models detected it.`);
+    } else {
+      out.push(`If the face is genuine, the fake ${one(fake, 'classification', 'classifications')} by ${names(fake)} ${one(fake, 'is a false positive', 'are false positives')}, which is consistent with ${one(fake, 'its false-positive rate', 'their false-positive rates')} on ${realWhere} (${andList(fake.map(k => pct(F.fpr[k - 1])))}${one(fake, '', ', respectively')}) compared with ${andList(real.map(k => pct(F.fpr[k - 1])))} for ${names(real)}.`);
+      out.push(`If the face is fake, the real ${one(real, 'classification', 'classifications')} by ${names(real)} ${one(real, 'is a missed detection', 'are missed detections')}; ${one(real, `Model ${real[0]} detected ${pct(F.tpr[real[0] - 1])}`, `these models detected ${andList(real.map(k => pct(F.tpr[k - 1])))}, respectively,`)} of ${fakeWhere}.`);
+    }
+    out.push(s.kind === 'video'
+      ? 'Because a new video also originates outside FaceForensics++, more errors may occur than these in-domain figures indicate.'
+      : 'Because a new photo lies outside the FaceForensics++ training data, it corresponds to the out-of-domain condition of Test Set B, in which every model was less accurate than on FaceForensics++.');
+  }
+  const near = ks.filter(k => Math.abs(R[k].p - .5) < .05);
+  if (near.length) out.push((near.length === 1
+    ? `The score of Model ${near[0]} (${f4(R[near[0]].p)}) lies within 0.05 of the 0.5 cut-off, so a small change in the score would reverse its classification.`
+    : `The scores of ${andList(near.map(k => `Model ${k} (${f4(R[k].p)})`))} lie within 0.05 of the 0.5 cut-off, so small changes in these scores would reverse their classifications.`)
+    + ' Chapter V recommends selecting the cut-off from the validation data rather than fixing it at 0.5.');
+  return out;
+}
+function renderWhy(s) {
+  const el = $('#why'), R = S.runs[s.id] || {};
+  if (!el) return;
+  if (![1, 2, 3, 4].every(k => R[k])) { el.innerHTML = ''; return; }
+  const lines = explain(s, R);
+  el.innerHTML = `<div class="why"><h3>Why these results</h3><p class="lead1">${esc(lines[0])}</p>${lines.slice(1).map(l => `<p>${esc(l)}</p>`).join('')}</div>`;
+}
+
 /* ---------------------------------------------------------------- detect */
 function select(id) {
   if (S.busy) return;
@@ -90,9 +177,11 @@ function renderDetect() {
     <div><button class="btn" id="run">Run the four models</button></div></div>
   <div class="pipe" id="pipe">${pipeSteps(4).map(x => `<span>${x}</span>`).join('')}</div>
   <div class="cards" id="cards">${[1, 2, 3, 4].map(k => card(k, (S.runs[s.id] || {})[k])).join('')}</div>
+  <div id="why"></div>
   <div id="detect-err"></div>
   <p class="note">Fake probability: 0 means real, 1 means fake. A score of 0.50 or higher is called FAKE. A video's score is the average of its frames' scores.</p>`;
   $('#run').addEventListener('click', () => runAll(s));
+  renderWhy(s);
 }
 function card(k, r) {
   const [n, d] = MODELS[k];
@@ -133,7 +222,7 @@ async function runModel(s, k, animate) {
 }
 async function runAll(s) {
   if (S.busy) return;
-  S.busy = true; $('#run').disabled = true; $('#detect-err').innerHTML = '';
+  S.busy = true; $('#run').disabled = true; $('#detect-err').innerHTML = ''; $('#why').innerHTML = '';
   try {
     for (const k of [1, 2, 3, 4]) {
       const c = $('#card' + k); c.classList.add('busy');
@@ -141,6 +230,7 @@ async function runAll(s) {
       c.outerHTML = card(k, r);
       if (k === 1) $('#film').innerHTML = film(s);
     }
+    renderWhy(s);
   } catch (e) { $('#detect-err').innerHTML = `<div class="err">${esc(e.message)}</div>`; }
   S.busy = false; const b = $('#run'); if (b) { b.disabled = false; b.textContent = 'Run again'; }
 }
