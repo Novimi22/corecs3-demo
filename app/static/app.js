@@ -34,6 +34,7 @@ function show(v) {
   $$('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   $$('.view').forEach(x => x.classList.toggle('on', x.id === 'v-' + v));
   if (v === 'inside') renderInside();
+  if (v === 'results') renderResults();
   window.scrollTo(0, 0);
 }
 async function loadStatus() {
@@ -359,6 +360,108 @@ function renderBatch(list, body) {
     <p class="small" style="margin:8px 0 0">Correct on <b>${tp + tn} of ${n}</b> inputs</p>
     <p class="small" style="margin:2px 0 0">${mt[k][1] ? `${mt[k][0] === mt[k][1] ? '<span class="ok">✓</span>' : '<span class="bad">!</span>'} <b>${mt[k][0]} of ${mt[k][1]}</b> match the recorded test results` : ''}</p></div>`; }).join('')}</div>
   <div class="tbl"><table><thead><tr><th>Input</th><th>Actually</th>${[1, 2, 3, 4].map(k => `<th class="n">${MODELS[k][0]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---------------------------------------------------------------- results (chapter IV) */
+// Every value on the Results screen is copied from Chapter IV of the manuscript (Tables IV6 to IV13, Figures 4.17 to 4.21).
+const CH4 = {
+  A: {tpr: [.9888, .9700, .9613, .9700], fpr: [.4050, .1250, .1350, .2400], acc: [.9100, .9510, .9420, .9280],
+      auc: [.9784, .9836, .9865, .9685], frame_auc: [.9411, .9526, .9548, .9197]},
+  B: {tpr: [.9382, .7884, .8012, .8277], fpr: [.5135, .2704, .2221, .4631], acc: [.7124, .7590, .7895, .6823],
+      auc: [.8854, .8361, .8708, .7712]},
+  gap: [.0930, .1475, .1157, .1974],
+  // confusion counts at the 0.5 cut-off: [TP, FN, FP, TN]
+  cm: {A: [[791, 9, 81, 119], [776, 24, 25, 175], [769, 31, 27, 173], [776, 24, 48, 152]],
+       B: [[28145, 1855, 15404, 14596], [23652, 6348, 8111, 21889], [24035, 5965, 6663, 23337], [24830, 5170, 13893, 16107]]},
+  // threshold tests: [label, set, threshold, key, p-values of Models 1-4, outcome of Models 1-4]
+  tests: [['TPR', 'A', '≥ 0.85', 'tpr', ['< 0.001', '< 0.001', '< 0.001', '< 0.001'], [1, 1, 1, 1]],
+          ['FPR', 'A', '≤ 0.15', 'fpr', ['= 1.000', '= 0.161', '= 0.276', '= 1.000'], [0, 0, 0, 0]],
+          ['Accuracy', 'A', '≥ 0.85', 'acc', ['< 0.001', '< 0.001', '< 0.001', '< 0.001'], [1, 1, 1, 1]],
+          ['AUC-ROC', 'A', '≥ 0.90', 'auc', ['< 0.001', '< 0.001', '< 0.001', '< 0.001'], [1, 1, 1, 1]],
+          ['TPR', 'B', '≥ 0.85', 'tpr', ['< 0.001', '= 1.000', '= 1.000', '= 1.000'], [1, 0, 0, 0]],
+          ['FPR', 'B', '≤ 0.15', 'fpr', ['= 1.000', '= 1.000', '= 1.000', '= 1.000'], [0, 0, 0, 0]],
+          ['Accuracy', 'B', '≥ 0.85', 'acc', ['= 1.000', '= 1.000', '= 1.000', '= 1.000'], [0, 0, 0, 0]],
+          ['AUC-ROC', 'B', '≥ 0.85', 'auc', ['< 0.001', '= 1.000', '< 0.001', '= 1.000'], [1, 0, 1, 0]],
+          ['Cross-domain AUC gap', '', '≤ 0.10', 'gap', ['= 0.045', '= 1.000', '= 1.000', '= 1.000'], [1, 0, 0, 0]]],
+  // McNemar: [pair, set, only the earlier model correct, only the later model correct, statistic, p]
+  mcnemar: [[[1, 2], 'A', 16, 57, '21.918', '< 0.001'], [[1, 2], 'B', 5889, 8689, '537.413', '< 0.001'],
+            [[2, 3], 'A', 18, 9, '2.370', '= 0.124'], [[2, 3], 'B', 3546, 5377, '375.311', '< 0.001'],
+            [[3, 4], 'A', 35, 21, '3.018', '= 0.082'], [[3, 4], 'B', 9675, 3240, '3205.293', '< 0.001']],
+  // effect of each added component: [step, component, ΔAUC on Test Set B [CI], Δ|gap| [CI]]
+  effects: [['1 → 2', 'DAID', [-.0493, -.0518, -.0468], [.0545, .0476, .0615]],
+            ['2 → 3', 'Fixed SRM frequency stream', [.0347, .0326, .0368], [-.0318, -.0367, -.0267]],
+            ['3 → 4', 'Learnable SRM filters', [-.0997, -.1023, -.0970], [.0817, .0726, .0898]]],
+  // inputs misclassified by all four models: [input, truth, scores of Models 1-4, remark]
+  errors: [['Real_FFPP/543_bf35b651', 'Real', [.8401, .9067, .7874, .9732], 'Blurry, heavily compressed broadcast frame; skin texture smoothed out'],
+           ['Real_FFPP/080_d3b22235', 'Real', [.8844, .9174, .6407, .9697], 'Low-resolution news broadcast frame; soft focus and downward gaze'],
+           ['Real_FFPP/256_c5f08095', 'Real', [.9519, .7432, .6070, .9222], 'Bright, even lighting and smooth, made-up skin; mouth open mid-speech'],
+           ['NeuralTextures/419_824_83f6d9f9', 'Fake', [.4613, .1117, .1542, .1257], 'Low-quality webcam frame; eyes nearly closed and mouth moving'],
+           ['NeuralTextures/522_337_43e97647', 'Fake', [.1982, .1371, .3377, .1939], 'Blurry broadcast frame; mouth open mid-speech, where the manipulation lies'],
+           ['Real_DiffFace/18310_91fbb426', 'Real', [.9995, .9992, .9990, .9994], 'Stylized, retouched portrait; high contrast, heavy makeup, hair over the face'],
+           ['Real_DiffFace/22314_f67c92ad', 'Real', [.9996, .9990, .9994, .9984], 'Severely blurred, upscaled close-up; face partly outside the crop'],
+           ['Real_DiffFace/21633_acb7292f', 'Real', [.9995, .9991, .9985, .9992], 'Studio portrait with soft lighting and very smooth, retouched skin'],
+           ['ADM/2755_052cab31', 'Fake', [.0188, .0009, .0003, .0014], 'Sharp image with natural lighting and realistic skin texture and stubble'],
+           ['ADM/8822_0abdd520', 'Fake', [.0156, .0041, .0032, .0058], 'Sharp image with natural wrinkles and realistic skin detail']]
+};
+const KS = [1, 2, 3, 4];
+const n0 = v => Number(v).toLocaleString('en-US');
+const sgn4 = v => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(4);
+const src = t => `<span class="srcTag">${t}</span>`;
+
+function renderResults() {
+  const body = $('#results-body');
+  // performance table, best of the four highlighted
+  const best = (vals, low) => { const b = low ? Math.min(...vals) : Math.max(...vals); return vals.map(v => v === b); };
+  const row = (label, vals, low, ref) => { const h = best(vals, low);
+    return `<tr><td>${label}${ref ? ' <span class="small mut">(reference)</span>' : ''}</td>${vals.map((v, i) => `<td class="n${h[i] ? ' best' : ''}">${v.toFixed(4)}</td>`).join('')}</tr>`; };
+  const setRows = t => [['TPR (fakes detected)', 'tpr'], ['FPR (real faces called fake)', 'fpr', 1], ['Accuracy', 'acc'], ['AUC-ROC', 'auc']]
+    .map(([l, key, low]) => row(l, CH4[t][key], low)).join('') + (t === 'A' ? row('Frame-level AUC-ROC', CH4.A.frame_auc, 0, 1) : '');
+  const passes = KS.map(k => CH4.tests.filter(x => x[5][k - 1]).length);
+  const perf = `<div class="tbl"><table class="res"><thead><tr><th>Metric</th>${KS.map(k => `<th class="n">${MODELS[k][0]}<br><span class="small mut">${MODELS[k][1]}</span></th>`).join('')}</tr></thead><tbody>
+    <tr class="grp"><td colspan="5">Test Set A · FaceForensics++ (in-domain) · 1,000 videos, scored per video</td></tr>${setRows('A')}
+    <tr class="grp"><td colspan="5">Test Set B · DiffusionFace (out-of-domain) · 60,000 images, scored per image</td></tr>${setRows('B')}
+    <tr class="grp"><td colspan="5">Cross-domain</td></tr>${row('Cross-domain AUC gap |AUC A − AUC B|', CH4.gap, 1)}
+    <tr><td><b>Threshold tests passed</b></td>${passes.map(p => `<td class="n"><b>${p} of 9</b></td>`).join('')}</tr></tbody></table></div>`;
+
+  // AUC bars (one axis, 0.60 to 1.00)
+  const x = v => ((v - .6) / .4 * 100).toFixed(2);
+  const bars = `<div class="aucbars">${KS.map(k => `<div class="ab"><b>${MODELS[k][0]}</b><div class="abt">
+      ${['A', 'B'].map(t => `<div class="abr ${t}"><i style="width:${x(CH4[t].auc[k - 1])}%"></i><span class="num">${t} ${CH4[t].auc[k - 1].toFixed(4)}</span></div>`).join('')}
+      <em class="th" style="left:${x(.90)}%" title="Test Set A threshold 0.90"></em><em class="th b" style="left:${x(.85)}%" title="Test Set B threshold 0.85"></em></div></div>`).join('')}
+    <div class="abaxis"><span></span><div>${[.6, .7, .8, .9, 1].map(v => `<span style="left:${x(v)}%">${v.toFixed(2)}</span>`).join('')}</div></div></div>
+    <p class="small mut"><span class="key A"></span> Test Set A &nbsp; <span class="key B"></span> Test Set B &nbsp; Dashed lines: thresholds of 0.90 (Test Set A) and 0.85 (Test Set B). The axis starts at 0.60.</p>`;
+
+  // confusion matrices
+  const cms = `<div class="grid4">${KS.map(k => ['A', 'B'].map(t => { const [tp, fn, fp, tn] = CH4.cm[t][k - 1];
+    return `<div class="cm"><b>${MODELS[k][0]}</b> <span class="small mut">· ${SETS[t][0]}</span>
+      <div class="cmg"><span></span><span class="h">Called real</span><span class="h">Called fake</span>
+      <span class="h">Real</span><span class="c g">${n0(tn)}</span><span class="c r">${n0(fp)}</span>
+      <span class="h">Fake</span><span class="c r">${n0(fn)}</span><span class="c g">${n0(tp)}</span></div></div>`; }).join('')).join('')}</div>`;
+
+  // threshold tests
+  const tests = `<div class="tbl"><table class="res"><thead><tr><th>Test</th><th>Threshold</th>${KS.map(k => `<th class="n">${MODELS[k][0]}</th>`).join('')}</tr></thead><tbody>
+    ${CH4.tests.map(([l, t, th, , ps, ok]) => `<tr><td>${t ? SETS[t][0] + ' · ' : ''}${l}</td><td class="num">${th}</td>${ps.map((p, i) => `<td class="n ${ok[i] ? 'pass' : 'fail'}">${ok[i] ? 'pass' : 'fail'} · p ${p}</td>`).join('')}</tr>`).join('')}
+    <tr><td colspan="2"><b>Decision</b></td>${passes.map(p => `<td class="n"><b>Fail to reject H₀</b><br><span class="small mut">(${p} of 9)</span></td>`).join('')}</tr></tbody></table></div>`;
+
+  // McNemar and component effects
+  const mcn = `<div class="tbl"><table class="res"><thead><tr><th>Models</th><th>Test set</th><th class="n">Only the earlier<br>model correct</th><th class="n">Only the later<br>model correct</th><th class="n">χ²</th><th class="n">p</th></tr></thead><tbody>
+    ${CH4.mcnemar.map(([[a, b], t, e, l, s, p]) => `<tr><td>${a} vs ${b}</td><td>${t}</td><td class="n">${n0(e)}</td><td class="n">${n0(l)}</td><td class="n">${s.replace(/\B(?=(\d{3})+\.)/g, ',')}</td><td class="n">${p.replace('= ', '')}</td></tr>`).join('')}</tbody></table></div>`;
+  const ci = ([v, lo, hi], goodUp) => `<td class="n ${(v > 0) === goodUp ? 'pass' : 'fail'}">${sgn4(v)}<br><span class="small">[${sgn4(lo)}, ${sgn4(hi)}]</span></td>`;
+  const eff = `<div class="tbl"><table class="res"><thead><tr><th>Step</th><th>Added component</th><th class="n">Change in Test Set B AUC</th><th class="n">Change in |gap|</th></tr></thead><tbody>
+    ${CH4.effects.map(([s, c, a, g]) => `<tr><td>Model ${s}</td><td>${c}</td>${ci(a, true)}${ci(g, false)}</tr>`).join('')}</tbody></table></div>
+    <p class="small mut">Green marks a change that improved cross-domain detection and red one that worsened it. No 95% confidence interval contains zero. These are reported as estimates, without an accept-or-reject decision. For reference only, Model 4's Test Set B AUC-ROC (0.7712, 95% CI [0.7674, 0.7749]) was below the 0.816 that Liao et al. (2026) reported on DFDC; the datasets and scoring level differ.</p>`;
+
+  // error analysis
+  const errs = `<div class="tbl"><table class="res"><thead><tr><th>Input</th><th>Actually</th>${KS.map(k => `<th class="n">${MODELS[k][0]}</th>`).join('')}<th>Remarks</th></tr></thead><tbody>
+    ${CH4.errors.map(([n, y, ps, r]) => `<tr><td class="num small">${esc(n)}</td><td><span class="chip ${y === 'Real' ? 'real' : 'fake'}">${y}</span></td>${ps.map(p => `<td class="cell-p ${p >= .5 ? 'f' : 'r'}">${p.toFixed(4)}</td>`).join('')}<td class="small">${esc(r)}</td></tr>`).join('')}</tbody></table></div>`;
+
+  body.innerHTML = `
+  <div class="sec"><h2>Performance of the four models ${src('Table IV6')}</h2><p class="lead">TPR, FPR and accuracy use the 0.5 cut-off. The best value of the four is highlighted in each row.</p>${perf}</div>
+  <div class="sec"><h2>AUC-ROC on both test sets ${src('Figure 4.17')}</h2><p class="lead">Every model was less accurate on the diffusion-generated faces of Test Set B. Only Models 1 and 3 stayed above 0.85 on Test Set B, and only Model 1 kept the gap within 0.10.</p>${bars}</div>
+  <div class="sec"><h2>Confusion matrices ${src('Figures 4.18–4.21')}</h2><p class="lead">At the 0.5 cut-off. Test Set A has 800 fake and 200 real videos; Test Set B has 30,000 fake and 30,000 real images.</p>${cms}</div>
+  <div class="sec"><h2>Threshold tests and hypothesis decisions ${src('Tables IV7–IV10')}</h2><p class="lead">A threshold is met only when the one-proportion z-test (TPR, FPR and accuracy) or the DeLong-based z-test (AUC-ROC and the gap) shows at α = 0.05 that the value significantly meets it. H₀ is rejected only if all nine tests pass.</p>${tests}</div>
+  <div class="sec"><h2>Comparison of consecutive models ${src('Tables IV11–IV12')}</h2><div class="grid2"><div><h3>McNemar's test on paired predictions</h3>${mcn}</div><div><h3>Effect of each added component (95% CI)</h3>${eff}</div></div></div>
+  <div class="sec"><h2>Inputs misclassified by all four models ${src('Table IV13')}</h2><p class="lead">The most confidently misclassified inputs of each kind among those that every model got wrong. Most were real faces called fake: blurry, compressed or heavily retouched photos.</p>${errs}</div>`;
 }
 
 loadStatus(); loadSamples();

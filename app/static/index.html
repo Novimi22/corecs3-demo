@@ -16,6 +16,7 @@
   <button data-v="detect" class="on">Detect</button>
   <button data-v="inside">Inside the system</button>
   <button data-v="batch">Batch test</button>
+  <button data-v="results">Results (Chapter IV)</button>
 </nav>
 <main>
 <section class="view on" id="v-detect">
@@ -42,6 +43,12 @@
     <div class="progress"><i id="batch-bar"></i></div><span class="mut small" id="batch-txt"></span></div>
   <p class="lead mut">Every input in the list goes through all four models. These inputs were hand-picked, difficult ones included, so the counts below describe this list only, not the models' overall accuracy.</p>
   <div id="batch-body"></div>
+</section>
+
+<section class="view" id="v-results">
+  <div class="bar-top"><h2>Results (Chapter IV)</h2></div>
+  <p class="lead mut">The results of the four models on the complete test sets: 1,000 FaceForensics++ videos (Test Set A) and 60,000 DiffusionFace images (Test Set B). All values are as reported in Chapter IV of the manuscript.</p>
+  <div id="results-body"></div>
 </section>
 </main>
 <script src="/static/app.js"></script>
