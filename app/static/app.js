@@ -6,7 +6,7 @@ const f4 = v => (v == null || isNaN(v)) ? '–' : Number(v).toFixed(4);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const TOL = 0.01;   // a live score within 0.01 of the recorded score, with the same verdict, counts as a match
 const MODELS = {1: ['Model 1', 'Baseline (DFA)'], 2: ['Model 2', 'DFA + DAID'], 3: ['Model 3', 'DFA + DAID + fixed SRM'], 4: ['Model 4', 'DFA + DAID + learnable SRM']};
-const GROUPS = [['main', 'Sample inputs'], ['hard', 'Difficult inputs'], ['extra', 'More test inputs'], ['upload', 'Your uploads']];
+const GROUPS = [['main', 'Sample inputs'], ['hard', 'Difficult inputs'], ['extra', 'More test inputs'], ['upload', 'Your uploads'], ['own', 'Extra inputs (outside our datasets)']];
 const SETS = {A: ['Test Set A', 'FaceForensics++', 'same source as the training data'], B: ['Test Set B', 'DiffusionFace', 'never seen during training']};
 const S = {samples: [], sel: null, runs: {}, inModel: 4, busy: false};
 
@@ -51,6 +51,7 @@ async function loadStatus() {
   } catch (e) { $('#status span').textContent = 'Server not reachable'; }
 }
 function subline(s) {
+  if (s.group === 'own') return `${s.tag} · outside our datasets`;
   if (!s.set) return 'New input';
   return `${s.tag} · ${SETS[s.set][1]}`;
 }
@@ -60,11 +61,15 @@ async function loadSamples(selectId) {
   g.innerHTML = GROUPS.map(([key, name]) => {
     const items = S.samples.filter(s => s.group === key);
     if (!items.length) return '';
-    return `<div class="gh">${name}</div>` + items.map(s => `<button class="item" data-id="${s.id}">
+    const rows = items.map(s => `<button class="item" data-id="${s.id}">
       <img src="/thumb/${s.id}" alt="" loading="lazy"><span><span class="t">${esc(s.title)}</span><span class="s">${esc(subline(s))}</span></span>
       ${s.label ? `<span class="chip ${s.label === 'Real' ? 'real' : 'fake'}">${s.label}</span>` : '<span class="chip unk">?</span>'}</button>`).join('');
+    if (key === 'own') return `<details class="own"${S.ownOpen ? ' open' : ''}><summary class="gh">${name} · ${items.length}</summary>${rows}</details>`;
+    return `<div class="gh">${name}</div>` + rows;
   }).join('') || '<p class="mut small" style="padding:14px">No inputs yet. Copy the bundle folder (README step 3).</p>';
   $$('.item', g).forEach(b => b.addEventListener('click', () => select(b.dataset.id)));
+  const own = $('details.own', g);
+  if (own) own.addEventListener('toggle', () => { S.ownOpen = own.open; });
   if (selectId) select(selectId); else if (!S.sel && S.samples.length) select((S.samples.find(s => s.tag === 'S4') || S.samples[0]).id);
 }
 

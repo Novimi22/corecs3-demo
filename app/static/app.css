@@ -159,3 +159,7 @@ table.res td.pass{color:var(--real);font-weight:600}table.res td.fail{color:var(
 .abaxis{display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px}.abaxis div{position:relative;height:18px}
 .abaxis div span{position:absolute;transform:translateX(-50%);font:500 12px var(--mono);color:var(--mut)}
 .key{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px}.key.A{background:#1d4f91}.key.B{background:#d98e04}
+details.own>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px}
+details.own>summary::-webkit-details-marker{display:none}
+details.own>summary::before{content:"\25B8";font-size:11px}
+details.own[open]>summary::before{content:"\25BE"}

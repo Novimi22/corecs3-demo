@@ -15,6 +15,8 @@ Everything below happens **on the HPC**. Connect to it with **Chrome Remote Desk
 | Models, test inputs and recorded scores | `C:\corecs3-demo\bundle` (don't edit) |
 | Our thesis code and Python environment | `C:\corecs3-dual-stream` (the demo only reads from it) |
 | Uploaded files | `C:\corecs3-demo\uploads` |
+| Our own extra photos and videos (originals) | `C:\corecs3-demo\own_inputs` (never on GitHub) |
+| The same files, prepared for the demo | `C:\corecs3-demo\own` (never on GitHub) |
 
 ---
 
@@ -45,7 +47,7 @@ The HPC's GPU uses a free licence that stops working about 24 hours after a rest
 |---|---|
 | **Detect** | Pick an input on the left, or upload one, then click **Run the four models**. Each card shows that model's fake probability (0 = real, 1 = fake; 0.50 or higher = FAKE). |
 | **Inside the system** | After running an input, pick a model (1–4) to see every step for that input. |
-| **Batch test** | Click **Run all inputs**. Each model's card should say **"27 of 27 match the recorded test results"**. |
+| **Batch test** | Click **Run all inputs**. Each model's card should say **"28 of 28 match the recorded test results"**. |
 | **Results (Chapter IV)** | The Chapter IV results as reported in the manuscript: performance table, AUC-ROC bars, confusion matrices, threshold tests, model comparison and error analysis. |
 
 **"✓ Matches the recorded test result"** means the live score is the same as the score that model gave that input in our Chapter IV evaluation. Uploads have no recorded result, so they say "New input: no recorded test result".
@@ -57,6 +59,20 @@ The HPC's GPU uses a free licence that stops working about 24 hours after a rest
 - iPhone HEIC photos are rejected. iPhone videos may need *Settings → Camera → Formats → Most Compatible*.
 - Our tested upload files and their true answers are in the **Demo uploads** Drive folder and the **Demo Upload References** sheet (team Drive). Download the ones you need to the HPC's Desktop before presenting.
 - Use photos of teammates, with their permission, or generated faces. Don't use strangers or public figures.
+
+### Our own extra inputs (no uploading during the defense)
+Our own photos and videos are outside FF++ and DiffusionFace, so they are hidden in the closed drop-down **"Extra inputs (outside our datasets)"** at the bottom of the input list. Open it only if the panel asks for an input outside our datasets. They are prepared once (face crop, landmarks), so clicking one is as fast as a test input; the four models still score them live.
+
+To prepare them (once, or after adding files): close the demo, put the files in `C:\corecs3-demo\own_inputs`, then in PowerShell:
+```
+cd C:\corecs3-dual-stream
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+$env:DEMO_THESIS="C:\corecs3-dual-stream"
+cd C:\corecs3-demo
+python tools\add_own_inputs.py
+```
+Use photos of teammates (with permission) or generated faces only. Never commit these files to GitHub.
 
 ---
 
@@ -124,7 +140,7 @@ Change the `?v=` number each time, so GitHub sends a fresh copy. Restart the dem
 
 ## Defense-day checklist
 - [ ] Restart the HPC in the morning.
-- [ ] Delete `C:\corecs3-demo\uploads`.
+- [ ] Delete `C:\corecs3-demo\uploads` (our own extra inputs in `own` stay).
 - [ ] Start `run_demo_hpc.bat` and wait for **"Live · NVIDIA L4-24Q"**.
 - [ ] Run S4 once: the four scores should be 0.6192 · 0.5632 · 0.4861 · 0.3925, each with ✓.
 - [ ] Have the upload files ready on the HPC's Desktop.

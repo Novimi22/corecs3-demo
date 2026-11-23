@@ -46,6 +46,9 @@ CURATED = [
     ("H9", "ADM", "2755_052cab31", "hard"), ("H10", "ADM", "8822_0abdd520", "hard"),
 ]
 EXTRA = {"Real_FFPP": 1, "DeepFakes": 1, "Face2Face": 1, "FaceSwap": 1, "NeuralTextures": 1, "Real_DiffFace": 2, "ADM": 2}
+# added after the random extras so X1-X9 stay the same: a real FF++ video all four models classify correctly
+# (the original video of the person in S4; evaluation scores 0.0932, 0.0244, 0.0321, 0.0299)
+ADDED = [("X10", "Real_FFPP", "427_2f21141d", "extra")]
 NAMES = {"Real_FFPP": "Real video", "DeepFakes": "Deepfakes video", "Face2Face": "Face2Face video",
          "FaceSwap": "FaceSwap video", "NeuralTextures": "NeuralTextures video", "Real_DiffFace": "Real photo",
          "ADM": "Diffusion-generated photo"}
@@ -98,6 +101,7 @@ def main():
         for f in rng.sample(pool, cnt):
             n += 1
             picks.append((f"X{n}", m, f, "extra"))
+    picks += [a for a in ADDED if a[2] not in used]
 
     items = []
     for tag, m, folder, group in picks:

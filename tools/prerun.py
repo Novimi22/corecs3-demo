@@ -21,7 +21,7 @@ TOL = 0.01
 worst, bad, n, rows = 0.0, 0, 0, 0
 print(f"{'input':30s} {'model':>5s} {'live':>8s} {'recorded':>9s} {'largest diff, whole batch':>26s}  check")
 for it in S.manifest():
-    if it.get("group") == "upload":
+    if it.get("group") in ("upload", "own"):
         continue
     for k in (1, 2, 3, 4):
         r = S.engine.run(it["id"], it["dir"], k, it.get("label"), S.eval_p(it, k))

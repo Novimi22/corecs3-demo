@@ -15,6 +15,7 @@ import engine as E   # noqa: E402
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 SAMPLES = os.path.join(E.BUNDLE, "samples")
 UPLOADS = os.path.join(E.ROOT, "uploads")
+OWN = os.path.join(E.ROOT, "own")          # our own extra inputs, prepared once by tools/add_own_inputs.py
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
@@ -26,17 +27,18 @@ engine = E.Engine()
 
 
 def manifest():
-    """bundle/samples/samples.json (written by tools/collect_bundle.py), then this session's uploads."""
+    """bundle/samples/samples.json (written by tools/collect_bundle.py), our own prepared inputs, then uploads."""
     items = E.samples_meta()["items"]
     for it in items:
         it["dir"] = os.path.join(SAMPLES, it["id"])
-    if os.path.isdir(UPLOADS):
-        for sid in sorted(os.listdir(UPLOADS)):
-            meta = os.path.join(UPLOADS, sid, "upload.json")
-            if os.path.exists(meta):
-                it = json.load(open(meta))
-                it["dir"] = os.path.join(UPLOADS, sid)
-                items.append(it)
+    for root in (OWN, UPLOADS):
+        if os.path.isdir(root):
+            for sid in sorted(os.listdir(root)):
+                meta = os.path.join(root, sid, "upload.json")
+                if os.path.exists(meta):
+                    it = json.load(open(meta))
+                    it["dir"] = os.path.join(root, sid)
+                    items.append(it)
     return items
 
 
