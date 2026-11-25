@@ -24,7 +24,7 @@ OUT = os.path.join(E.ROOT, "own")
 VIDEO = (".mp4", ".mov", ".avi", ".mkv")
 PHOTO = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 # short titles for the files in the "[PICS] Any Upload" Drive folder (file name = code, e.g. A1.jpg)
-TITLES = {"A1": "Real teammate selfie", "A2": "Real teammate video", "A3": "Real, dark and blurry",
+TITLES = {"A1": "Real person, selfie", "A2": "Real person, video", "A3": "Real, dark and blurry",
           "A4": "Real, beauty filter", "A5": "Real, photo of a screen", "B1": "Our face-swap video",
           "B2": "Diffusion portrait", "B3": "GAN face", "B4": "Celeb-DF clip", "C1": "Group photo",
           "C2": "Face hidden by a hand", "D1": "Food (no face)", "D2": "Anime face", "D3": "Video with no face",
