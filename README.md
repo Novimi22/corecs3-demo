@@ -58,7 +58,7 @@ The HPC's GPU uses a free licence that stops working about 24 hours after a rest
 - Only the **largest face** in each frame is analysed.
 - iPhone HEIC photos are rejected. iPhone videos may need *Settings → Camera → Formats → Most Compatible*.
 - Our tested upload files and their true answers are in the **Demo uploads** Drive folder and the **Demo Upload References** sheet (team Drive). Download the ones you need to the HPC's Desktop before presenting.
-- Use photos of teammates, with their permission, or generated faces. Don't use strangers or public figures.
+- Use photos of people who have given their permission, or generated faces. Don't use strangers or public figures.
 
 ### Our own extra inputs (no uploading during the defense)
 Our own photos and videos are outside FF++ and DiffusionFace, so they are hidden in the closed drop-down **"Extra inputs (outside our datasets)"** at the bottom of the input list. Open it only if the panel asks for an input outside our datasets. They are prepared once (face crop, landmarks), so clicking one is as fast as a test input; the four models still score them live.
@@ -72,7 +72,7 @@ $env:DEMO_THESIS="C:\corecs3-dual-stream"
 cd C:\corecs3-demo
 python tools\add_own_inputs.py
 ```
-Use photos of teammates (with permission) or generated faces only. Never commit these files to GitHub.
+Use photos of people who have given their permission, or generated faces only. Never commit these files to GitHub.
 
 ---
 
