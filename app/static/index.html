@@ -21,11 +21,15 @@
 <main>
 <section class="view on" id="v-detect">
   <div class="layout">
-    <aside class="list">
-      <label class="drop" id="drop"><input type="file" id="file" accept=".jpg,.jpeg,.png,.webp,.bmp,.mp4,.mov,.avi,.mkv" hidden>
-        <b>Upload a photo or video</b><br>or drop a file here
-        <span class="formats">Photos: JPG, JPEG, PNG, WEBP, BMP<br>Videos: MP4, MOV, AVI, MKV · up to 200 MB</span></label>
+    <aside class="list" id="list">
+      <div class="lh"><b>Test inputs</b><span>From Test Set A (FaceForensics++) and Test Set B (DiffusionFace)</span></div>
       <div class="groups" id="groups"></div>
+      <div class="upwrap" id="upwrap" hidden>
+        <label class="drop" id="drop"><input type="file" id="file" accept=".jpg,.jpeg,.png,.webp,.bmp,.mp4,.mov,.avi,.mkv" hidden>
+          <b>Choose a photo or video</b><br>or drop a file here
+          <span class="formats">Photos: JPG, JPEG, PNG, WEBP, BMP<br>Videos: MP4, MOV, AVI, MKV · up to 200 MB</span></label>
+      </div>
+      <div class="lfoot"><button class="lk" id="up-toggle" aria-expanded="false">+ Upload</button><button class="more" id="more-toggle" aria-expanded="false" aria-label="More inputs" title="More">⋯</button></div>
     </aside>
     <div id="detect-main"><div class="empty">Choose an input on the left.</div></div>
   </div>
@@ -51,6 +55,8 @@
   <div id="results-body"></div>
 </section>
 </main>
+<div class="lightbox" id="lightbox" hidden><button class="lb-x" aria-label="Close">×</button><button class="lb-nav lb-prev" aria-label="Previous">‹</button>
+  <figure><img id="lb-img" alt=""><figcaption id="lb-cap"></figcaption></figure><button class="lb-nav lb-next" aria-label="Next">›</button></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

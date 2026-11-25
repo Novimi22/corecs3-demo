@@ -8,7 +8,11 @@ const TOL = 0.01;   // a live score within 0.01 of the recorded score, with the 
 const MODELS = {1: ['Model 1', 'Baseline (DFA)'], 2: ['Model 2', 'DFA + DAID'], 3: ['Model 3', 'DFA + DAID + fixed SRM'], 4: ['Model 4', 'DFA + DAID + learnable SRM']};
 const GROUPS = [['main', 'Sample inputs'], ['hard', 'Difficult inputs'], ['extra', 'More test inputs'], ['upload', 'Your uploads'], ['own', 'Extra inputs (outside our datasets)']];
 const SETS = {A: ['Test Set A', 'FaceForensics++', 'same source as the training data'], B: ['Test Set B', 'DiffusionFace', 'never seen during training']};
-const S = {samples: [], sel: null, runs: {}, inModel: 4, busy: false};
+const S = {samples: [], sel: null, runs: {}, inModel: 4, busy: false, moreOpen: false};
+// The inputs shown in the list. Everything else sits behind the small "⋯" button at the bottom of the list.
+const FEATURED = ['X10', 'S3', 'S7', 'S8', 'H6', 'H9'];
+const MINE = (() => { try { return new Set(JSON.parse(sessionStorage.getItem('mine') || '[]')); } catch (e) { return new Set(); } })();
+const remember = id => { MINE.add(id); try { sessionStorage.setItem('mine', JSON.stringify([...MINE])); } catch (e) { /* not kept */ } };
 
 async function api(url, opt) {
   const r = await fetch(url, opt);
@@ -55,23 +59,38 @@ function subline(s) {
   if (!s.set) return 'New input';
   return `${s.tag} · ${SETS[s.set][1]}`;
 }
+function itemRow(s) {
+  return `<button class="item" data-id="${s.id}">
+      <img src="/thumb/${s.id}" alt="" loading="lazy"><span><span class="t">${esc(s.title)}</span><span class="s">${esc(subline(s))}</span></span>
+      ${s.label ? `<span class="chip ${s.label === 'Real' ? 'real' : 'fake'}">${s.label}</span>` : '<span class="chip unk">?</span>'}</button>`;
+}
 async function loadSamples(selectId) {
   S.samples = await api('/api/samples');
   const g = $('#groups');
-  g.innerHTML = GROUPS.map(([key, name]) => {
-    const items = S.samples.filter(s => s.group === key);
-    if (!items.length) return '';
-    const rows = items.map(s => `<button class="item" data-id="${s.id}">
-      <img src="/thumb/${s.id}" alt="" loading="lazy"><span><span class="t">${esc(s.title)}</span><span class="s">${esc(subline(s))}</span></span>
-      ${s.label ? `<span class="chip ${s.label === 'Real' ? 'real' : 'fake'}">${s.label}</span>` : '<span class="chip unk">?</span>'}</button>`).join('');
-    if (key === 'own') return `<details class="own"${S.ownOpen ? ' open' : ''}><summary class="gh">${name} · ${items.length}</summary>${rows}</details>`;
-    return `<div class="gh">${name}</div>` + rows;
-  }).join('') || '<p class="mut small" style="padding:14px">No inputs yet. Copy the bundle folder (README step 3).</p>';
+  const feat = FEATURED.map(t => S.samples.find(s => s.tag === t && s.group !== 'upload' && s.group !== 'own')).filter(Boolean);
+  const mine = S.samples.filter(s => s.group === 'upload' && MINE.has(s.id));
+  const shown = new Set([...feat, ...mine].map(s => s.id));
+  const rest = GROUPS.map(([key, name]) => {
+    const items = S.samples.filter(s => s.group === key && !shown.has(s.id));
+    return items.length ? `<div class="gh">${name}</div>` + items.map(itemRow).join('') : '';
+  }).join('');
+  if (selectId && !shown.has(selectId)) S.moreOpen = true;
+  g.innerHTML = (feat.map(itemRow).join('') || '<p class="mut small" style="padding:14px">No inputs yet. Copy the bundle folder (README step 3).</p>')
+    + (mine.length ? '<div class="gh">Your uploads</div>' + mine.map(itemRow).join('') : '')
+    + `<div class="rest" id="rest"${S.moreOpen ? '' : ' hidden'}>${rest}</div>`;
   $$('.item', g).forEach(b => b.addEventListener('click', () => select(b.dataset.id)));
-  const own = $('details.own', g);
-  if (own) own.addEventListener('toggle', () => { S.ownOpen = own.open; });
-  if (selectId) select(selectId); else if (!S.sel && S.samples.length) select((S.samples.find(s => s.tag === 'S4') || S.samples[0]).id);
+  $('#more-toggle').setAttribute('aria-expanded', S.moreOpen);
+  if (selectId) select(selectId); else if (!S.sel && S.samples.length) select((feat[0] || S.samples[0]).id);
+  else if (S.sel) $$('.item').forEach(b => b.classList.toggle('on', b.dataset.id === S.sel.id));
 }
+$('#more-toggle').addEventListener('click', () => {
+  S.moreOpen = !S.moreOpen;
+  $('#rest').hidden = !S.moreOpen; $('#more-toggle').setAttribute('aria-expanded', S.moreOpen);
+  if (S.moreOpen) { const g = $('#groups'); g.scrollTo({top: $('#rest').offsetTop - g.offsetTop - 8, behavior: 'smooth'}); }
+});
+$('#up-toggle').addEventListener('click', () => {
+  const w = $('#upwrap'); w.hidden = !w.hidden; $('#up-toggle').setAttribute('aria-expanded', !w.hidden);
+});
 
 /* ---------------------------------------------------------------- why these results */
 // Pre-written notes, chosen by rules from the four scores, the input type and the true answer (when known).
@@ -243,6 +262,7 @@ async function runAll(s) {
 
 /* upload */
 const drop = $('#drop'), file = $('#file');
+$('#list').addEventListener('dragenter', e => { if ([...(e.dataTransfer.types || [])].includes('Files')) { $('#upwrap').hidden = false; $('#up-toggle').setAttribute('aria-expanded', true); } });
 ['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
 drop.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
@@ -253,9 +273,45 @@ async function upload(f) {
   try {
     const fd = new FormData(); fd.append('file', f);
     const m = await api('/api/upload', {method: 'POST', body: fd});
-    drop.innerHTML = old; await loadSamples(m.id);
+    drop.innerHTML = old; remember(m.id); $('#upwrap').hidden = true; $('#up-toggle').setAttribute('aria-expanded', false);
+    await loadSamples(m.id);
   } catch (e) { drop.innerHTML = old + `<div class="err">${esc(e.message)}</div>`; }
 }
+
+/* ---------------------------------------------------------------- full-size view of any picture */
+// Click a picture on the Detect or Inside screens to see it full size; arrows step through the pictures beside it.
+const LB = {imgs: [], i: 0};
+function lbShow(i) {
+  LB.i = (i + LB.imgs.length) % LB.imgs.length;
+  const im = LB.imgs[LB.i], fig = im.closest('figure'), cap = fig && fig.querySelector('figcaption');
+  const big = $('#lb-img');
+  // for uploads and our own inputs the original frame is kept next to the face crop (raw_fNNNNN.jpg)
+  const raw = /\/media\/(own-|upload-)[^/]+\/f\d{5}\.png$/.test(im.getAttribute('src') || '') ? im.src.replace(/f(\d{5})\.png$/, 'raw_f$1.jpg') : null;
+  big.onerror = raw ? () => { big.onerror = null; big.src = im.src; $('#lb-cap').textContent = (cap ? cap.textContent : ''); } : null;
+  big.src = raw || im.src;
+  big.classList.toggle('px', !raw && im.naturalWidth > 0 && im.naturalWidth <= 300);
+  $('#lb-cap').textContent = (cap ? cap.textContent : '') + (raw ? ' · original frame' : im.naturalWidth ? ` · ${im.naturalWidth} × ${im.naturalHeight} pixels` : '');
+  $$('#lightbox .lb-nav').forEach(b => b.hidden = LB.imgs.length < 2);
+  $('#lightbox').hidden = false;
+}
+document.addEventListener('click', e => {
+  const im = e.target.closest('#detect-main img, #inside-body img');
+  if (!im || e.target.closest('#lightbox')) return;
+  const box = im.closest('.film, .vis, .gallery, .step, #inside-body') || document;
+  LB.imgs = $$('img', box).filter(x => x.closest('#detect-main, #inside-body'));
+  lbShow(Math.max(0, LB.imgs.indexOf(im)));
+});
+$('#lightbox').addEventListener('click', e => {
+  if (e.target.closest('.lb-prev')) return lbShow(LB.i - 1);
+  if (e.target.closest('.lb-next')) return lbShow(LB.i + 1);
+  if (!e.target.closest('img')) $('#lightbox').hidden = true;
+});
+document.addEventListener('keydown', e => {
+  if ($('#lightbox').hidden) return;
+  if (e.key === 'Escape') $('#lightbox').hidden = true;
+  if (e.key === 'ArrowLeft') lbShow(LB.i - 1);
+  if (e.key === 'ArrowRight') lbShow(LB.i + 1);
+});
 
 /* ---------------------------------------------------------------- inside */
 $$('#in-model button').forEach(b => b.addEventListener('click', () => { S.inModel = +b.dataset.k; renderInside(); }));
