@@ -1,10 +1,12 @@
 """CORECS3 system demo: web server. Start with run_demo.bat (Windows) or:  python app/server.py
 Then open http://localhost:7860 in Chrome or Edge.
 """
+import hashlib
 import json
 import os
 import re
 import sys
+import time
 import uuid
 
 from flask import Flask, abort, jsonify, request, send_from_directory
@@ -15,7 +17,11 @@ import engine as E   # noqa: E402
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 SAMPLES = os.path.join(E.BUNDLE, "samples")
 UPLOADS = os.path.join(E.ROOT, "uploads")
-OWN = os.path.join(E.ROOT, "own")          # our own extra inputs, prepared once by tools/add_own_inputs.py
+# The list shows these six test inputs. Every other input is a file in the "sample test sets" folder
+# (tools/make_sample_folder.py) and appears in the list only after that file is uploaded.
+FEATURED = ["X10", "S3", "S7", "S8", "H6", "H9"]
+INDEX = os.path.join(E.BUNDLE, "upload_index.json")   # file fingerprint -> test input (written by make_sample_folder.py)
+SHOWN = []          # inputs uploaded since the server started, in upload order
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
@@ -27,19 +33,38 @@ engine = E.Engine()
 
 
 def manifest():
-    """bundle/samples/samples.json (written by tools/collect_bundle.py), our own prepared inputs, then uploads."""
+    """Every input the server can run: bundle/samples/samples.json (written by tools/collect_bundle.py), then uploads."""
     items = E.samples_meta()["items"]
     for it in items:
         it["dir"] = os.path.join(SAMPLES, it["id"])
-    for root in (OWN, UPLOADS):
-        if os.path.isdir(root):
-            for sid in sorted(os.listdir(root)):
-                meta = os.path.join(root, sid, "upload.json")
-                if os.path.exists(meta):
-                    it = json.load(open(meta))
-                    it["dir"] = os.path.join(root, sid)
-                    items.append(it)
+    if os.path.isdir(UPLOADS):
+        for sid in sorted(os.listdir(UPLOADS)):
+            meta = os.path.join(UPLOADS, sid, "upload.json")
+            if os.path.exists(meta):
+                it = json.load(open(meta))
+                it["dir"] = os.path.join(UPLOADS, sid)
+                items.append(it)
     return items
+
+
+def listed():
+    """What the list shows: the six featured test inputs, then whatever was uploaded since the server started."""
+    items = {it["id"]: it for it in manifest()}
+    feat = [it for t in FEATURED for it in items.values() if it.get("tag") == t and it.get("group") != "upload"]
+    return feat + [items[i] for i in SHOWN if i in items and items[i] not in feat]
+
+
+def fingerprints():
+    try:
+        return json.load(open(INDEX))
+    except (OSError, ValueError):
+        return {}
+
+
+def show(sid):
+    if sid in SHOWN:
+        SHOWN.remove(sid)
+    SHOWN.append(sid)
 
 
 def eval_p(item, k):
@@ -81,10 +106,10 @@ def status():
 
 @app.get("/api/samples")
 def samples():
-    out = []
-    for it in manifest():
-        out.append({k: v for k, v in it.items() if k != "dir"})
-    return jsonify(out)
+    feat = set(FEATURED)
+    return jsonify([{**{k: v for k, v in it.items() if k != "dir"},
+                     "featured": it.get("tag") in feat and it["id"] not in SHOWN and it.get("group") != "upload"}
+                    for it in listed()])
 
 
 @app.post("/api/run")
@@ -112,20 +137,39 @@ def upload():
     if ext not in (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".mp4", ".mov", ".avi", ".mkv"):
         return jsonify({"error": "This file type is not supported. Use a photo (JPG, JPEG, PNG, WEBP, BMP) "
                                  "or a video (MP4, MOV, AVI, MKV), up to 200 MB."}), 400
+    data = f.read()
+    digest = hashlib.sha256(data).hexdigest()
+    known = fingerprints().get(digest)
+    if known and known.get("sample"):
+        # One of our test inputs (a file from the "sample test sets" folder): it is run like every test input,
+        # on its test-set frames inside its evaluation batch, so the live scores can be checked against the record.
+        item = next((it for it in manifest() if it["id"] == known["sample"]), None)
+        if item is None:
+            return jsonify({"error": "This test input is not in the bundle."}), 404
+        show(item["id"])
+        return jsonify({**{k: v for k, v in item.items() if k != "dir"}, "recognized": True})
+    for it in manifest():   # the same file uploaded again since the server started: show that upload again
+        if it["id"] in SHOWN and it.get("sha256") == digest:
+            show(it["id"])
+            return jsonify({k: v for k, v in it.items() if k != "dir"})
     sid = "upload-" + uuid.uuid4().hex[:8]
     d = os.path.join(UPLOADS, sid)
     os.makedirs(d, exist_ok=True)
     src = os.path.join(d, "original" + ext)
-    f.save(src)
+    with open(src, "wb") as out:
+        out.write(data)
     try:
         with engine.lock:   # MTCNN draws random numbers while it loads: never while a model is being built
             entries = E.preprocess_upload(src, d)
     except Exception as e:
         return jsonify({"error": str(e)}), 422
-    meta = {"id": sid, "tag": "New", "title": f.filename[:40], "group": "upload", "set": None, "label": None,
+    # a file from the folder's "Outside our datasets" keeps its code and title (A1 "Real person, selfie"); others are "New"
+    tag, title = (known["tag"], known["title"]) if known else ("New", f.filename[:40])
+    meta = {"id": sid, "tag": tag, "title": title, "group": "upload", "set": None, "label": None,
             "kind": "video" if ext in (".mp4", ".mov", ".avi", ".mkv") else "image", "frames": len(entries),
-            "folder": None, "eval_p": None}
+            "folder": None, "eval_p": None, "sha256": digest, "uploaded": time.strftime("%Y-%m-%d %H:%M:%S")}
     json.dump(meta, open(os.path.join(d, "upload.json"), "w"))
+    show(sid)
     return jsonify(meta)
 
 
