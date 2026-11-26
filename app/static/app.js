@@ -6,13 +6,9 @@ const f4 = v => (v == null || isNaN(v)) ? '–' : Number(v).toFixed(4);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const TOL = 0.01;   // a live score within 0.01 of the recorded score, with the same verdict, counts as a match
 const MODELS = {1: ['Model 1', 'Baseline (DFA)'], 2: ['Model 2', 'DFA + DAID'], 3: ['Model 3', 'DFA + DAID + fixed SRM'], 4: ['Model 4', 'DFA + DAID + learnable SRM']};
-const GROUPS = [['main', 'Sample inputs'], ['hard', 'Difficult inputs'], ['extra', 'More test inputs'], ['upload', 'Your uploads'], ['own', 'Extra inputs (outside our datasets)']];
 const SETS = {A: ['Test Set A', 'FaceForensics++', 'same source as the training data'], B: ['Test Set B', 'DiffusionFace', 'never seen during training']};
-const S = {samples: [], sel: null, runs: {}, inModel: 4, busy: false, moreOpen: false};
-// The inputs shown in the list. Everything else sits behind the small "⋯" button at the bottom of the list.
-const FEATURED = ['X10', 'S3', 'S7', 'S8', 'H6', 'H9'];
-const MINE = (() => { try { return new Set(JSON.parse(sessionStorage.getItem('mine') || '[]')); } catch (e) { return new Set(); } })();
-const remember = id => { MINE.add(id); try { sessionStorage.setItem('mine', JSON.stringify([...MINE])); } catch (e) { /* not kept */ } };
+const S = {samples: [], sel: null, runs: {}, inModel: 4, busy: false};
+// The server lists six test inputs (X10, S3, S7, S8, H6, H9), then every input uploaded since it started.
 
 async function api(url, opt) {
   const r = await fetch(url, opt);
@@ -55,8 +51,7 @@ async function loadStatus() {
   } catch (e) { $('#status span').textContent = 'Server not reachable'; }
 }
 function subline(s) {
-  if (s.group === 'own') return `${s.tag} · outside our datasets`;
-  if (!s.set) return 'New input';
+  if (!s.set) return s.tag && s.tag !== 'New' ? `${s.tag} · outside our datasets` : 'New input';
   return `${s.tag} · ${SETS[s.set][1]}`;
 }
 function itemRow(s) {
@@ -67,27 +62,14 @@ function itemRow(s) {
 async function loadSamples(selectId) {
   S.samples = await api('/api/samples');
   const g = $('#groups');
-  const feat = FEATURED.map(t => S.samples.find(s => s.tag === t && s.group !== 'upload' && s.group !== 'own')).filter(Boolean);
-  const mine = S.samples.filter(s => s.group === 'upload' && MINE.has(s.id));
-  const shown = new Set([...feat, ...mine].map(s => s.id));
-  const rest = GROUPS.map(([key, name]) => {
-    const items = S.samples.filter(s => s.group === key && !shown.has(s.id));
-    return items.length ? `<div class="gh">${name}</div>` + items.map(itemRow).join('') : '';
-  }).join('');
-  if (selectId && !shown.has(selectId)) S.moreOpen = true;
+  const feat = S.samples.filter(s => s.featured), ups = S.samples.filter(s => !s.featured);
   g.innerHTML = (feat.map(itemRow).join('') || '<p class="mut small" style="padding:14px">No inputs yet. Copy the bundle folder (README step 3).</p>')
-    + (mine.length ? '<div class="gh">Your uploads</div>' + mine.map(itemRow).join('') : '')
-    + `<div class="rest" id="rest"${S.moreOpen ? '' : ' hidden'}>${rest}</div>`;
+    + (ups.length ? '<div class="gh">Your uploads</div>' + ups.map(itemRow).join('') : '');
   $$('.item', g).forEach(b => b.addEventListener('click', () => select(b.dataset.id)));
-  $('#more-toggle').setAttribute('aria-expanded', S.moreOpen);
-  if (selectId) select(selectId); else if (!S.sel && S.samples.length) select((feat[0] || S.samples[0]).id);
+  if (selectId) select(selectId); else if (!S.sel && S.samples.length) select(S.samples[0].id);
   else if (S.sel) $$('.item').forEach(b => b.classList.toggle('on', b.dataset.id === S.sel.id));
+  if (selectId) { const on = $(`.item[data-id="${selectId}"]`); if (on) on.scrollIntoView({block: 'nearest'}); }
 }
-$('#more-toggle').addEventListener('click', () => {
-  S.moreOpen = !S.moreOpen;
-  $('#rest').hidden = !S.moreOpen; $('#more-toggle').setAttribute('aria-expanded', S.moreOpen);
-  if (S.moreOpen) { const g = $('#groups'); g.scrollTo({top: $('#rest').offsetTop - g.offsetTop - 8, behavior: 'smooth'}); }
-});
 $('#up-toggle').addEventListener('click', () => {
   const w = $('#upwrap'); w.hidden = !w.hidden; $('#up-toggle').setAttribute('aria-expanded', !w.hidden);
 });
@@ -196,7 +178,7 @@ function renderDetect() {
   const lab = s.label ? `<span class="chip ${s.label === 'Real' ? 'real' : 'fake'}">Actually ${s.label.toLowerCase()}</span>` : '<span class="chip unk">Actual answer unknown</span>';
   const set = s.set ? `<span class="chip info">${SETS[s.set][0]} · ${SETS[s.set][1]} (${SETS[s.set][2]})</span>` : '<span class="chip info">New input, not part of our data</span>';
   $('#detect-main').innerHTML = `
-  <div class="case"><div><h2>${s.tag && s.set ? `<span class="tag">${esc(s.tag)}</span> ` : ''}${esc(s.title)}</h2>
+  <div class="case"><div><h2>${s.tag && s.tag !== 'New' ? `<span class="tag">${esc(s.tag)}</span> ` : ''}${esc(s.title)}</h2>
     <div class="meta">${lab}${set}<span class="chip info">${s.kind === 'video' ? (s.frames === 1 ? '1 frame' : `${s.frames} frames`) : 'Photo'}</span></div>
     <div class="film" id="film">${film(s)}</div></div>
     <div><button class="btn" id="run">Run the four models</button></div></div>
@@ -267,15 +249,17 @@ $('#list').addEventListener('dragenter', e => { if ([...(e.dataTransfer.types ||
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, () => drop.classList.remove('over')));
 drop.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]); });
 file.addEventListener('change', () => { if (file.files[0]) upload(file.files[0]); });
+// Only the text inside the box changes while a file uploads; the file chooser itself stays, so a second upload works.
 async function upload(f) {
-  const old = drop.innerHTML;
-  drop.innerHTML = `<b>Preparing ${esc(f.name)}…</b><br>frames, face crop, 224 × 224, 81 landmarks`;
+  const txt = $('#drop-text'), old = txt.innerHTML;
+  txt.innerHTML = `<b>Preparing ${esc(f.name)}…</b>`;
   try {
     const fd = new FormData(); fd.append('file', f);
     const m = await api('/api/upload', {method: 'POST', body: fd});
-    drop.innerHTML = old; remember(m.id); $('#upwrap').hidden = true; $('#up-toggle').setAttribute('aria-expanded', false);
+    txt.innerHTML = old; $('#upwrap').hidden = true; $('#up-toggle').setAttribute('aria-expanded', false);
     await loadSamples(m.id);
-  } catch (e) { drop.innerHTML = old + `<div class="err">${esc(e.message)}</div>`; }
+  } catch (e) { txt.innerHTML = old + `<div class="err">${esc(e.message)}</div>`; }
+  file.value = '';   // choosing the same file again still uploads it
 }
 
 /* ---------------------------------------------------------------- full-size view of any picture */
