@@ -16,7 +16,7 @@ Everything below happens **on the HPC**. Connect to it with **Chrome Remote Desk
 | Our thesis code and Python environment | `C:\corecs3-dual-stream` (the demo only reads from it) |
 | Uploaded files | `C:\corecs3-demo\uploads` |
 | Our own extra photos and videos (originals) | `C:\corecs3-demo\own_inputs` (never on GitHub) |
-| The same files, prepared for the demo | `C:\corecs3-demo\own` (never on GitHub) |
+| Inputs not in the list, ready to upload | `C:\corecs3-demo\sample test sets` (never on GitHub) |
 
 ---
 
@@ -47,7 +47,7 @@ The HPC's GPU uses a free licence that stops working about 24 hours after a rest
 |---|---|
 | **Detect** | Pick an input on the left, or upload one, then click **Run the four models**. Each card shows that model's fake probability (0 = real, 1 = fake; 0.50 or higher = FAKE). |
 | **Inside the system** | After running an input, pick a model (1–4) to see every step for that input. |
-| **Batch test** | Click **Run all inputs**. Each model's card should say **"28 of 28 match the recorded test results"**. |
+| **Batch test** | Click **Run all inputs**. It runs the test inputs in the list (the six, plus any test input uploaded from the folder). Each model's card should say **"6 of 6 match the recorded test results"** (more if you uploaded test inputs). |
 | **Results (Chapter IV)** | The Chapter IV results as reported in the manuscript: performance table, AUC-ROC bars, confusion matrices, threshold tests, model comparison and error analysis. |
 
 **"✓ Matches the recorded test result"** means the live score is the same as the score that model gave that input in our Chapter IV evaluation. Uploads have no recorded result, so they say "New input: no recorded test result".
@@ -60,18 +60,33 @@ The HPC's GPU uses a free licence that stops working about 24 hours after a rest
 - Our tested upload files and their true answers are in the **Demo uploads** Drive folder and the **Demo Upload References** sheet (team Drive). Download the ones you need to the HPC's Desktop before presenting.
 - Use photos of people who have given their permission, or generated faces. Don't use strangers or public figures.
 
-### Our own extra inputs (no uploading during the defense)
-Our own photos and videos are outside FF++ and DiffusionFace, so they are hidden in the closed drop-down **"Extra inputs (outside our datasets)"** at the bottom of the input list. Open it only if the panel asks for an input outside our datasets. They are prepared once (face crop, landmarks), so clicking one is as fast as a test input; the four models still score them live.
+### Inputs not in the list: the "sample test sets" folder
+The list shows six test inputs: **X10, S3, S7, S8, H6, H9**. Every other input is a file in `C:\corecs3-demo\sample test sets`:
 
-To prepare them (once, or after adding files): close the demo, put the files in `C:\corecs3-demo\own_inputs`, then in PowerShell:
+| Subfolder | Files |
+|---|---|
+| Sample Inputs | S1, S2, S4, S5, S6 |
+| Difficult Inputs | H1–H5, H7, H8, H10 |
+| More inputs | X1–X9 |
+| Outside our datasets | A1 … D5 (our own photos and videos) |
+
+Only if the panel asks for more: click **+ Upload** and choose a file from the folder. It appears under **Your uploads** with its usual code and title (for example **H2 · Real video**), and the four models score it live.
+- A **test input** file (S, H, X) is recognized by its fingerprint and run exactly as in the evaluation (its test-set frames, inside its evaluation batch), so its scores show **✓ Matches the recorded test result**. Photos are the test image itself; videos are an MP4 of the video's 10 evaluated face crops.
+- A file from **Outside our datasets** goes through face detection, cropping and landmarks like any new upload, and keeps its code and title (for example **A1 · Real person, selfie**).
+
+To make the folder (once, or after changing `own_inputs`): close the demo, then in PowerShell:
 ```
-cd C:\corecs3-dual-stream
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\venv\Scripts\Activate.ps1
-$env:DEMO_THESIS="C:\corecs3-dual-stream"
 cd C:\corecs3-demo
-python tools\add_own_inputs.py
+$env:DEMO_THESIS="C:\corecs3-dual-stream"
+C:\corecs3-dual-stream\venv\Scripts\python.exe tools\make_sample_folder.py
 ```
+To prove that uploading every file gives the recorded results (about 10 minutes, demo closed):
+```
+$env:DEMO_GPU_MODELS="4"
+C:\corecs3-dual-stream\venv\Scripts\python.exe -u tools\check_sample_folder.py
+```
+The last line should read **ALL UPLOADED TEST INPUTS MATCH THE RECORDED TEST RESULTS.**
+
 Use photos of people who have given their permission, or generated faces only. Never commit these files to GitHub.
 
 ---
@@ -81,7 +96,7 @@ Use photos of people who have given their permission, or generated faces only. N
 Close the **black window** with its **X**. If Windows asks "Terminate batch job?", type `Y` and press Enter.
 
 ### Clear old uploads (before presenting)
-With the demo **stopped**, delete the folder `C:\corecs3-demo\uploads`. The "Your uploads" list then starts empty next time.
+The "Your uploads" list starts empty every time the demo starts. To also free the disk space, delete the folder `C:\corecs3-demo\uploads` while the demo is **stopped**.
 
 ---
 
@@ -140,8 +155,8 @@ Change the `?v=` number each time, so GitHub sends a fresh copy. Restart the dem
 
 ## Defense-day checklist
 - [ ] Restart the HPC in the morning.
-- [ ] Delete `C:\corecs3-demo\uploads` (our own extra inputs in `own` stay).
+- [ ] Delete `C:\corecs3-demo\uploads` (the `sample test sets` folder stays).
 - [ ] Start `run_demo_hpc.bat` and wait for **"Live · NVIDIA L4-24Q"**.
-- [ ] Run S4 once: the four scores should be 0.6192 · 0.5632 · 0.4861 · 0.3925, each with ✓.
-- [ ] Have the upload files ready on the HPC's Desktop.
+- [ ] Run X10 once: the four scores should be 0.0932 · 0.0244 · 0.0321 · 0.0299, each with ✓.
+- [ ] Check that `C:\corecs3-demo\sample test sets` has its four subfolders.
 - [ ] Keep the black window minimized, not closed.
